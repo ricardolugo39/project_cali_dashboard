@@ -1,25 +1,17 @@
 # dashboard_visitas.py
-
 import sys
 from pathlib import Path
 import pandas as pd
 import streamlit as st
-
 sys.path.append(str(Path.cwd()))
 
-from data.loader import load_tables, load_excel_files
-from data.calculations import (
-    build_product_classification,
-    build_product_families,
-    enrich_sales_with_classification,
-    build_customer_activity,
-    enrich_customers_with_activity,
-    enrich_sales_with_customer_activity,
-    filter_sales_by_bodega,
-    prepare_sales,
-)
-from data.google_sheets import load_visitas_from_google_sheet
+from data.google_sheets import (
 
+    load_visitas_from_google_sheet,
+
+    load_df_cali_from_google_sheet,
+
+)
 
 st.set_page_config(
     page_title="Dashboard Comercial Cali",
@@ -31,49 +23,10 @@ st.set_page_config(
 # LOAD DATA
 # =========================================================
 
-@st.cache_data
+@st.cache_data(ttl=600)
 def load_data():
-    access_file = "/Users/ricardolugo/Library/CloudStorage/OneDrive-Personal/LH/Reports/sales_lh.accdb"
-    tables = ["sales", "customers"]
-
-    data = load_tables(access_file, tables)
-
-    df_sales = data["sales"]
-    df_customers = data["customers"]
-
-    (
-        df_actividades,
-        df_clasificacion,
-        df_inventario,
-        df_crm,
-        df_cotizacion
-    ) = load_excel_files()
-
+    df_cali = load_df_cali_from_google_sheet()
     df_visitas = load_visitas_from_google_sheet()
-
-    df_grupos = build_product_classification(df_clasificacion)
-    df_familias = build_product_families(df_clasificacion)
-    df_customer_activity = build_customer_activity(df_actividades)
-
-    df_sales_enriched = enrich_sales_with_classification(
-        df_sales,
-        df_grupos,
-        df_familias
-    )
-
-    df_customers_enriched = enrich_customers_with_activity(
-        df_customers,
-        df_customer_activity
-    )
-
-    df_sales_final = enrich_sales_with_customer_activity(
-        df_sales_enriched,
-        df_customers_enriched
-    )
-
-    df_sales_clean = prepare_sales(df_sales_final)
-    df_cali = filter_sales_by_bodega(df_sales_clean, 50)
-
     return df_cali, df_visitas
 
 

@@ -1,52 +1,40 @@
-from pathlib import Path
 import pandas as pd
 import gspread
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-import pickle
+import streamlit as st
+from google.oauth2.service_account import Credentials
 
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
-]
+SPREADSHEET_ID_VISITAS = "168FSopPqvlI5hUgM3Uzk9fRsa51zF2Uem5DYJD3JjJ8"
+WORKSHEET_VISITAS = "Visitas"
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-CREDENTIALS_FILE = BASE_DIR / "credentials.json"
-TOKEN_FILE = BASE_DIR / "token_sheets.pickle"
-
-SPREADSHEET_ID = "168FSopPqvlI5hUgM3Uzk9fRsa51zF2Uem5DYJD3JjJ8"
-WORKSHEET_NAME = "Visitas"
+SPREADSHEET_ID_CALI = "1MgbbhbYUvm9NHBtKqRI7MuvTtw7RONifqwoke-R49Ro"
+WORKSHEET_CALI = "df_cali"
 
 
 def get_google_creds():
-    creds = None
-
-    if TOKEN_FILE.exists():
-        with open(TOKEN_FILE, "rb") as token:
-            creds = pickle.load(token)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                CREDENTIALS_FILE,
-                SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-
-        with open(TOKEN_FILE, "wb") as token:
-            pickle.dump(creds, token)
-
-    return creds
+    service_account_info = dict(st.secrets["gcp_service_account"])
+    return Credentials.from_service_account_info(
+        service_account_info,
+        scopes=SCOPES,
+    )
 
 
 def load_visitas_from_google_sheet():
     creds = get_google_creds()
     client = gspread.authorize(creds)
 
-    sheet = client.open_by_key(SPREADSHEET_ID)
-    worksheet = sheet.worksheet(WORKSHEET_NAME)
+    sheet = client.open_by_key(SPREADSHEET_ID_VISITAS)
+    worksheet = sheet.worksheet(WORKSHEET_VISITAS)
 
-    records = worksheet.get_all_records()
-    return pd.DataFrame(records)
+    return pd.DataFrame(worksheet.get_all_records())
+
+
+def load_df_cali_from_google_sheet():
+    creds = get_google_creds()
+    client = gspread.authorize(creds)
+
+    sheet = client.open_by_key(SPREADSHEET_ID_CALI)
+    worksheet = sheet.worksheet(WORKSHEET_CALI)
+
+    return pd.DataFrame(worksheet.get_all_records())
