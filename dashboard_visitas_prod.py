@@ -4,6 +4,7 @@ from pathlib import Path
 from io import BytesIO
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 sys.path.append(str(Path.cwd()))
 
@@ -960,8 +961,13 @@ with tab3:
     html_report = build_visit_report_html(visita_row)
     pdf_bytes = html_to_pdf_bytes(html_report)
 
-    with st.expander("Vista previa del reporte"):
-        st.markdown(html_report, unsafe_allow_html=True)
+    with st.expander("Vista previa del reporte", expanded=True):
+
+        components.html(
+            html_report,
+            height=1200,
+            scrolling=True
+        )
 
     report_id = safe_value(
         visita_row.get("ID_Visita"),
