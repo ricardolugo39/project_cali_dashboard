@@ -299,11 +299,11 @@ tabla_top_clientes = build_top_clientes(
     top_n=20
 )
 
-tab1, tab2 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "Vista Asesor",
-    "Gerencial"
+    "Gerencial",
+    "Cliente 360"
 ])
-
 
 # =========================================================
 # TAB 1 — VISTA ASESOR
@@ -629,6 +629,234 @@ with tab2:
 
     st.dataframe(
         tabla_top_clientes,
+        width="stretch",
+        hide_index=True
+    )
+
+# =========================================================
+# TAB 3 — CLIENTE 360
+# =========================================================
+
+with tab3:
+    st.title("Cliente 360")
+
+    visitas_360 = clean_cliente_dashboard(df_visitas)
+
+    visitas_360["Fecha_Visita"] = pd.to_datetime(
+        visitas_360["Fecha_Visita"],
+        errors="coerce"
+    )
+
+    visitas_360["Fecha_Compromiso"] = pd.to_datetime(
+        visitas_360["Fecha_Compromiso"],
+        errors="coerce"
+    )
+
+    visitas_360["Requiere_Accion"] = (
+        visitas_360["Requiere_Accion"]
+        .astype(str)
+        .str.upper()
+        .eq("TRUE")
+    )
+
+    visitas_360["Estado_Normalizado"] = (
+        visitas_360["Estado"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    clientes = sorted(
+        visitas_360["Cliente_Dashboard"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+
+    cliente_sel = st.selectbox(
+        "Seleccionar cliente",
+        clientes
+    )
+
+    cliente_df = visitas_360[
+        visitas_360["Cliente_Dashboard"] == cliente_sel
+    ].copy()
+
+    cliente_df = cliente_df.sort_values(
+        "Fecha_Visita",
+        ascending=False
+    )
+
+    acciones_abiertas = cliente_df[
+        (cliente_df["Requiere_Accion"] == True)
+        &
+        (cliente_df["Estado_Normalizado"].isin([
+            "ABIERTO",
+            "EN SEGUIMIENTO",
+            "PENDIENTE"
+        ]))
+    ].copy()
+
+    today = pd.Timestamp.today().normalize()
+
+    acciones_abiertas["Dias_Vencido"] = (
+        today - acciones_abiertas["Fecha_Compromiso"]
+    ).dt.days
+
+    acciones_vencidas = acciones_abiertas[
+        acciones_abiertas["Dias_Vencido"] > 0
+    ].copy()
+
+    ultima_visita = cliente_df["Fecha_Visita"].max()
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Visitas registradas",
+        len(cliente_df)
+    )
+
+    col2.metric(
+        "Última visita",
+        ultima_visita.strftime("%Y-%m-%d") if pd.notna(ultima_visita) else "Sin visita"
+    )
+
+    col3.metric(
+        "Acciones abiertas",
+        len(acciones_abiertas)
+    )
+
+    col4.metric(
+        "Acciones vencidas",
+        len(acciones_vencidas)
+    )
+
+    st.divider()
+
+    col_left, col_right = st.columns([1, 1])
+
+    with col_left:
+        st.subheader("Resumen del cliente")
+
+        ultimo_registro = cliente_df.iloc[0]
+
+        st.markdown(f"""
+        **Cliente:** {cliente_sel}  
+        **Último asesor:** {ultimo_registro.get("Asesor", "")}  
+        **Último contacto:** {ultimo_registro.get("Contacto_Visitado", "")}  
+        **Cargo:** {ultimo_registro.get("Cargo_Contacto", "")}  
+        **Tipo última visita:** {ultimo_registro.get("Tipo_Visita", "")}
+        """)
+
+        st.subheader("Última necesidad detectada")
+        st.info(
+            ultimo_registro.get("Necesidad_Detectada", "Sin información")
+        )
+
+    with col_right:
+        st.subheader("Riesgos y competencia")
+
+        riesgos = (
+            cliente_df["Riesgo_Detectado"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        riesgos = riesgos[riesgos != ""]
+
+        competencia = (
+            cliente_df["Competencia_Presente"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        competencia = competencia[competencia != ""]
+
+        if not riesgos.empty:
+            st.markdown("**Riesgos detectados:**")
+            for riesgo in riesgos.unique():
+                st.warning(riesgo)
+        else:
+            st.write("No hay riesgos registrados.")
+
+        if not competencia.empty:
+            st.markdown("**Competencia presente:**")
+            for comp in competencia.unique():
+                st.info(comp)
+        else:
+            st.write("No hay competencia registrada.")
+
+    st.divider()
+
+    st.subheader("Acciones pendientes")
+
+    if acciones_abiertas.empty:
+        st.success("Este cliente no tiene acciones abiertas.")
+    else:
+        tabla_acciones = acciones_abiertas[
+            [
+                "Fecha_Visita",
+                "Asesor",
+                "Accion_Requerida",
+                "Responsable_Seguimiento_nombre",
+                "Fecha_Compromiso",
+                "Dias_Vencido",
+                "Estado",
+            ]
+        ].copy()
+
+        tabla_acciones["Fecha_Visita"] = tabla_acciones["Fecha_Visita"].dt.strftime("%Y-%m-%d")
+        tabla_acciones["Fecha_Compromiso"] = tabla_acciones["Fecha_Compromiso"].dt.strftime("%Y-%m-%d")
+
+        tabla_acciones = tabla_acciones.rename(columns={
+            "Fecha_Visita": "Fecha visita",
+            "Asesor": "Asesor",
+            "Accion_Requerida": "Acción requerida",
+            "Responsable_Seguimiento_nombre": "Responsable",
+            "Fecha_Compromiso": "Fecha compromiso",
+            "Dias_Vencido": "Días vencido",
+            "Estado": "Estado",
+        })
+
+        st.dataframe(
+            tabla_acciones,
+            width="stretch",
+            hide_index=True
+        )
+
+    st.divider()
+
+    st.subheader("Historial de visitas")
+
+    historial = cliente_df[
+        [
+            "Fecha_Visita",
+            "Asesor",
+            "Tipo_Visita",
+            "Motivo_Visita",
+            "Resumen_Ejecutivo",
+            "Necesidad_Detectada",
+            "Requiere_Accion",
+            "Estado",
+        ]
+    ].copy()
+
+    historial["Fecha_Visita"] = historial["Fecha_Visita"].dt.strftime("%Y-%m-%d")
+
+    historial = historial.rename(columns={
+        "Fecha_Visita": "Fecha visita",
+        "Tipo_Visita": "Tipo visita",
+        "Motivo_Visita": "Motivo",
+        "Resumen_Ejecutivo": "Resumen",
+        "Necesidad_Detectada": "Necesidad detectada",
+        "Requiere_Accion": "Requiere acción",
+    })
+
+    st.dataframe(
+        historial,
         width="stretch",
         hide_index=True
     )
