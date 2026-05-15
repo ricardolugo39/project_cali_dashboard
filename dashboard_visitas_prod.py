@@ -1,20 +1,19 @@
-from jinja2 import Environment, FileSystemLoader# dashboard_visitas.py
+from jinja2 import Environment, FileSystemLoader
 import sys
 from pathlib import Path
+from io import BytesIO
 import pandas as pd
 import streamlit as st
+
 sys.path.append(str(Path.cwd()))
-from io import BytesIO
-from xhtml2pdf import pisa
-import html
+
+BASE_DIR = Path(__file__).parent
 
 from data.google_sheets import (
-
     load_visitas_from_google_sheet,
-
     load_df_cali_from_google_sheet,
-
 )
+
 
 st.set_page_config(
     page_title="Dashboard Comercial Cali",
@@ -299,32 +298,30 @@ def safe_value(value, default=""):
 def build_visit_report_html(row):
 
     env = Environment(
-        loader=FileSystemLoader("templates")
+        loader=FileSystemLoader(BASE_DIR / "templates"),
+        autoescape=True
     )
 
-    template = env.get_template(
-        "visit_report.html"
-    )
+    template = env.get_template("visit_report.html")
 
     fecha_visita = row.get("Fecha_Visita")
 
     if pd.notna(fecha_visita):
-        fecha_visita = pd.to_datetime(
-            fecha_visita
-        ).strftime("%Y-%m-%d")
+        fecha_visita = pd.to_datetime(fecha_visita).strftime("%Y-%m-%d")
     else:
         fecha_visita = ""
 
-    fecha_compromiso = row.get(
-        "Fecha_Compromiso"
-    )
+    fecha_compromiso = row.get("Fecha_Compromiso")
 
     if pd.notna(fecha_compromiso):
-        fecha_compromiso = pd.to_datetime(
-            fecha_compromiso
-        ).strftime("%Y-%m-%d")
+        fecha_compromiso = pd.to_datetime(fecha_compromiso).strftime("%Y-%m-%d")
     else:
         fecha_compromiso = "Sin fecha definida"
+
+    responsable = safe_value(
+        row.get("Responsable_Seguimiento_nombre"),
+        safe_value(row.get("Asesor"))
+    )
 
     html_report = template.render(
         cliente=safe_value(row.get("Cliente_Nombre")),
@@ -334,22 +331,25 @@ def build_visit_report_html(row):
         contacto=safe_value(row.get("Contacto_Visitado")),
         cargo=safe_value(row.get("Cargo_Contacto")),
         tipo_visita=safe_value(row.get("Tipo_Visita")),
-        motivo=safe_value(row.get("Motivo_Visita")),
-        resumen=safe_value(row.get("Resumen_Ejecutivo")),
-        necesidad=safe_value(row.get("Necesidad_Detectada")),
-        accion=safe_value(row.get("Accion_Requerida")),
-        responsable=safe_value(
-            row.get("Responsable_Seguimiento_nombre")
-        ),
-        estado=safe_value(row.get("Estado")),
+        motivo=safe_value(row.get("Motivo_Visita"), "No informado"),
+        resumen=safe_value(row.get("Resumen_Ejecutivo"), "No informado"),
+        necesidad=safe_value(row.get("Necesidad_Detectada"), "No informado"),
+        accion=safe_value(row.get("Accion_Requerida"), "No se registraron acciones pendientes."),
+        responsable=responsable,
+        estado=safe_value(row.get("Estado"), "Sin estado"),
         fecha_compromiso=fecha_compromiso
     )
 
     return html_report
 
-
 def html_to_pdf_bytes(html_content):
+    try:
+        from xhtml2pdf import pisa
+    except ImportError:
+        return None
+
     pdf_buffer = BytesIO()
+
     pisa_status = pisa.CreatePDF(
         src=html_content,
         dest=pdf_buffer
@@ -963,14 +963,26 @@ with tab3:
     with st.expander("Vista previa del reporte"):
         st.markdown(html_report, unsafe_allow_html=True)
 
-    if pdf_bytes:
-        file_name = f"reporte_visita_{safe_value(visita_row.get('ID_Visita'), 'sin_id')}.pdf"
+    report_id = safe_value(
+        visita_row.get("ID_Visita"),
+        "sin_id"
+    )
 
+    if pdf_bytes:
         st.download_button(
             label="Descargar PDF",
             data=pdf_bytes,
-            file_name=file_name,
+            file_name=f"reporte_visita_{report_id}.pdf",
             mime="application/pdf"
         )
     else:
-        st.error("No se pudo generar el PDF.")
+        st.warning(
+            "No se pudo generar PDF. Puedes descargar el reporte en HTML."
+        )
+
+        st.download_button(
+            label="Descargar reporte HTML",
+            data=html_report.encode("utf-8"),
+            file_name=f"reporte_visita_{report_id}.html",
+            mime="text/html"
+        )
