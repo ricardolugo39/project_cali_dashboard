@@ -7,3 +7,5 @@ google-auth-httplib2
 openpyxl
 pyarrow
 python-dotenv
+xhtml2pdf
+jinja2

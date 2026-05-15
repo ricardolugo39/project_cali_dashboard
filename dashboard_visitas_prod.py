@@ -1,9 +1,12 @@
-# dashboard_visitas.py
+from jinja2 import Environment, FileSystemLoader# dashboard_visitas.py
 import sys
 from pathlib import Path
 import pandas as pd
 import streamlit as st
 sys.path.append(str(Path.cwd()))
+from io import BytesIO
+from xhtml2pdf import pisa
+import html
 
 from data.google_sheets import (
 
@@ -286,7 +289,77 @@ def build_top_clientes(df_cali, df_visitas, top_n=20):
 
     return tabla_top_clientes
 
+def safe_value(value, default=""):
+    if pd.isna(value):
+        return default
+    value = str(value).strip()
+    return value if value else default
 
+
+def build_visit_report_html(row):
+
+    env = Environment(
+        loader=FileSystemLoader("templates")
+    )
+
+    template = env.get_template(
+        "visit_report.html"
+    )
+
+    fecha_visita = row.get("Fecha_Visita")
+
+    if pd.notna(fecha_visita):
+        fecha_visita = pd.to_datetime(
+            fecha_visita
+        ).strftime("%Y-%m-%d")
+    else:
+        fecha_visita = ""
+
+    fecha_compromiso = row.get(
+        "Fecha_Compromiso"
+    )
+
+    if pd.notna(fecha_compromiso):
+        fecha_compromiso = pd.to_datetime(
+            fecha_compromiso
+        ).strftime("%Y-%m-%d")
+    else:
+        fecha_compromiso = "Sin fecha definida"
+
+    html_report = template.render(
+        cliente=safe_value(row.get("Cliente_Nombre")),
+        nit=safe_value(row.get("Cliente")),
+        fecha_visita=fecha_visita,
+        asesor=safe_value(row.get("Asesor")),
+        contacto=safe_value(row.get("Contacto_Visitado")),
+        cargo=safe_value(row.get("Cargo_Contacto")),
+        tipo_visita=safe_value(row.get("Tipo_Visita")),
+        motivo=safe_value(row.get("Motivo_Visita")),
+        resumen=safe_value(row.get("Resumen_Ejecutivo")),
+        necesidad=safe_value(row.get("Necesidad_Detectada")),
+        accion=safe_value(row.get("Accion_Requerida")),
+        responsable=safe_value(
+            row.get("Responsable_Seguimiento_nombre")
+        ),
+        estado=safe_value(row.get("Estado")),
+        fecha_compromiso=fecha_compromiso
+    )
+
+    return html_report
+
+
+def html_to_pdf_bytes(html_content):
+    pdf_buffer = BytesIO()
+    pisa_status = pisa.CreatePDF(
+        src=html_content,
+        dest=pdf_buffer
+    )
+
+    if pisa_status.err:
+        return None
+
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
 # =========================================================
 # APP
 # =========================================================
@@ -860,3 +933,44 @@ with tab3:
         width="stretch",
         hide_index=True
     )
+
+    st.divider()
+
+    st.subheader("Generar reporte de visita")
+
+    visitas_opciones = cliente_df.copy()
+
+    visitas_opciones["visita_label"] = (
+        visitas_opciones["Fecha_Visita"].dt.strftime("%Y-%m-%d")
+        + " | "
+        + visitas_opciones["Asesor"].astype(str)
+        + " | "
+        + visitas_opciones["Motivo_Visita"].astype(str)
+    )
+
+    visita_label_sel = st.selectbox(
+        "Seleccionar visita",
+        visitas_opciones["visita_label"].tolist()
+    )
+
+    visita_row = visitas_opciones[
+        visitas_opciones["visita_label"] == visita_label_sel
+    ].iloc[0]
+
+    html_report = build_visit_report_html(visita_row)
+    pdf_bytes = html_to_pdf_bytes(html_report)
+
+    with st.expander("Vista previa del reporte"):
+        st.markdown(html_report, unsafe_allow_html=True)
+
+    if pdf_bytes:
+        file_name = f"reporte_visita_{safe_value(visita_row.get('ID_Visita'), 'sin_id')}.pdf"
+
+        st.download_button(
+            label="Descargar PDF",
+            data=pdf_bytes,
+            file_name=file_name,
+            mime="application/pdf"
+        )
+    else:
+        st.error("No se pudo generar el PDF.")
